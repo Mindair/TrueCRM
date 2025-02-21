@@ -5,6 +5,9 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 from openpyxl.styles import PatternFill
 import json
+from openpyxl.styles import Alignment  # Импортируем класс Alignment
+import uuid  # Импортируем модуль для генерации UUID
+
 
 
 class TaskManager:
@@ -12,20 +15,20 @@ class TaskManager:
         self.tasks = []  # Инициализируем пустой список задач
         self.filename = filename  # Сохраняем имя файла
 
-        # Попытка загрузить задачи из существующего файла
         try:
             wb = load_workbook(self.filename)
             ws = wb.active
 
-            # Пропускаем заголовки и читаем данные
-            for row in ws.iter_rows(min_row=2, values_only=True):  # Начинаем с второй строки
-                if row[0] is not None:  # Проверяем, что номер задачи указан
+            # Читаем данные из файла
+            for row in ws.iter_rows(min_row=2, values_only=True):  # Пропускаем заголовки
+                if row[0]:  # Проверяем, что ID указан
                     task = {
-                        "description": row[3],  # Описание (четвертый столбец)
-                        "done": True if row[1] == "Выполнено" else False,  # Статус (второй столбец)
-                        "company": row[2],  # Компания (третий столбец)
-                        "deadline": row[4] if row[4] != "Нет дедлайна" else None,  # Дедлайн (пятый столбец)
-                        "created_at": row[5] if row[5] else None  # Время создания (шестой столбец)
+                        "id": row[0],  # ID задачи
+                        "done": True if row[1] == "Выполнено" else False,
+                        "company": row[2],
+                        "description": row[3],
+                        "deadline": row[4] if row[4] != "Нет дедлайна" else None,
+                        "created_at": row[5]
                     }
                     self.tasks.append(task)
 
@@ -33,6 +36,7 @@ class TaskManager:
             print("Файл задач не найден. Создан новый список задач.")
         except InvalidFileException:
             print("Ошибка чтения файла. Создан новый список задач.")
+
 
     def addTask(self):
         description = input("Введите описание задачи: ")
@@ -58,18 +62,44 @@ class TaskManager:
                 except ValueError as e:
                     print(f"Ошибка: {e}. Пожалуйста, используйте формат YYYY-MM-DD.")
 
-        # Автоматическое добавление времени создания
-        created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Текущая дата и время
+        # Генерируем уникальный id для задачи
+        task_id = str(uuid.uuid4())[:8]  # Берем первые 8 символов UUID для компактности
 
+        # Создаем задачу
+        created_at = datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Время создания
         task = {
+            "id": task_id,  # Уникальный идентификатор
             "description": description,
             "done": False,
             "company": company,
             "deadline": deadline,
-            "created_at": created_at  # Добавляем время создания
+            "created_at": created_at
         }
         self.tasks.append(task)
         print("Задача добавлена!")
+
+    def editTaskDescription(self):
+        self.lookTasks()  # Показываем текущие задачи
+        if not self.tasks:
+            return
+
+        try:
+            number = int(input("Введите номер задачи для редактирования описания: "))
+            if 1 <= number <= len(self.tasks):
+                current_task = self.tasks[number - 1]
+                print(f"Текущее описание: {current_task['description']}")
+
+                new_description = input("Введите дополнение к описанию (или нажмите Enter, чтобы пропустить): ").strip()
+                if new_description:  # Если пользователь ввел новое описание
+                    # Добавляем новое описание через \n
+                    current_task["description"] += f"\n{new_description}"
+                    print("Описание успешно обновлено.")
+                else:
+                    print("Описание не изменено.")
+            else:
+                print("Неверный номер задачи.")
+        except ValueError:
+            print("Введите корректный номер.")
 
     def lookTasks(self):
         if not self.tasks:
@@ -80,8 +110,8 @@ class TaskManager:
         for i, task in enumerate(self.tasks, start=1):
             status = "[v]" if task["done"] else "[x]"
             deadline = f"(Дедлайн: {task['deadline']})" if task["deadline"] else ""
-            created_at = f"(Создана: {task['created_at']})"  # Выводим время создания
-            print(f"{i}. {status} Компания: {task['company']} | Задача: {task['description']} {deadline} {created_at}")
+            print(
+                f"{i}. ID: {task['id']} | {status} Компания: {task['company']} | Задача: {task['description']} {deadline}")
 
     def removeTask(self):
         self.lookTasks()
@@ -154,6 +184,9 @@ class TaskManager:
         print(f"Задачи успешно сохранены в {filename}.")
 
     def save_to_excel(self, filename="tasks.xlsx"):
+        """Сохраняет задачи в Excel-файл."""
+        headers = ["ID", "Статус", "Компания", "Описание", "Дедлайн", "Время создания"]  # Определяем заголовки
+
         try:
             # Попытка загрузить существующий файл
             wb = load_workbook(filename)
@@ -163,10 +196,7 @@ class TaskManager:
             wb = Workbook()
             ws = wb.active
             ws.title = "Задачи"
-
-            # Обновленные заголовки
-            headers = ["Номер", "Статус", "Компания", "Описание", "Дедлайн", "Время создания"]
-            ws.append(headers)
+            ws.append(headers)  # Добавляем заголовки
 
         # Цветовая схема
         green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE",
@@ -174,34 +204,63 @@ class TaskManager:
         red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE",
                                fill_type="solid")  # Красный для невыполненых задач
 
-        # Определяем номер следующей задачи
-        if ws.max_row > 1:  # Если есть уже записанные задачи
-            last_number = ws.cell(row=ws.max_row, column=1).value  # Получаем последний номер
-        else:
-            last_number = 0  # Если файл пустой, начинаем с 1
+        # Словарь для хранения существующих задач по их ID
+        existing_tasks = {}
+        for row_idx, row in enumerate(ws.iter_rows(min_row=2, max_col=len(headers), values_only=True), start=2):
+            if row[0]:  # Проверяем, что ID указан
+                existing_tasks[row[0]] = {
+                    "row_index": row_idx,  # Номер строки в Excel (начиная с 2, так как первая строка — заголовки)
+                    "status": row[1],
+                    "company": row[2],
+                    "description": row[3],
+                    "deadline": row[4],
+                    "created_at": row[5]
+                }
 
-        # Добавляем новые задачи
+        # Обновляем или добавляем задачи
         for task in self.tasks:
-            last_number += 1
-            status = "Выполнено" if task["done"] else "Не выполнено"
-            deadline = task["deadline"] if task["deadline"] else "Нет дедлайна"
-            row = [
-                last_number,
-                status,
-                task["company"],
-                task["description"],
-                deadline,
-                task["created_at"]  # Добавляем время создания
-            ]
-            ws.append(row)
+            task_id = task["id"]
+            if task_id in existing_tasks:  # Если задача уже существует
+                row_index = existing_tasks[task_id]["row_index"]  # Номер строки в Excel
 
-            # Применяем цветовую заливку только к ячейке "Статус"
-            row_index = ws.max_row  # Номер текущей строки
-            status_cell = ws.cell(row=row_index, column=2)  # Ячейка "Статус" (второй столбец)
-            if task["done"]:
-                status_cell.fill = green_fill  # Зеленый для выполненых задач
-            else:
-                status_cell.fill = red_fill  # Красный для невыполненых задач
+                # Обновляем данные в существующей строке
+                ws.cell(row=row_index, column=2, value="Выполнено" if task["done"] else "Не выполнено")
+                ws.cell(row=row_index, column=3, value=task["company"])
+                ws.cell(row=row_index, column=4, value=task["description"])
+                ws.cell(row=row_index, column=5, value=task["deadline"] if task["deadline"] else "Нет дедлайна")
+
+                # Применяем цветовую заливку только к ячейке "Статус"
+                status_cell = ws.cell(row=row_index, column=2)  # Ячейка "Статус" (второй столбец)
+                if task["done"]:
+                    status_cell.fill = green_fill  # Зеленый для выполненых задач
+                else:
+                    status_cell.fill = red_fill  # Красный для невыполненых задач
+
+                # Форматирование ячейки "Описание"
+                description_cell = ws.cell(row=row_index, column=4)  # Ячейка "Описание" (четвертый столбец)
+                description_cell.alignment = Alignment(wrap_text=True)  # Включаем перенос текста
+            else:  # Если задачи нет в файле, добавляем новую строку
+                row = [
+                    task["id"],  # ID задачи
+                    "Выполнено" if task["done"] else "Не выполнено",
+                    task["company"],
+                    task["description"],
+                    task["deadline"] if task["deadline"] else "Нет дедлайна",
+                    task["created_at"]
+                ]
+                ws.append(row)
+
+                # Применяем цветовую заливку только к ячейке "Статус"
+                row_index = ws.max_row  # Номер текущей строки
+                status_cell = ws.cell(row=row_index, column=2)  # Ячейка "Статус" (второй столбец)
+                if task["done"]:
+                    status_cell.fill = green_fill  # Зеленый для выполненых задач
+                else:
+                    status_cell.fill = red_fill  # Красный для невыполненых задач
+
+                # Форматирование ячейки "Описание"
+                description_cell = ws.cell(row=row_index, column=4)  # Ячейка "Описание" (четвертый столбец)
+                description_cell.alignment = Alignment(wrap_text=True)  # Включаем перенос текста
 
         # Сохраняем файл
         wb.save(filename)
